@@ -12,10 +12,10 @@ FPS = 60
 
 ###DECISIONS####
 
-#wanne train again (load=false) or load the last model(load=true)
-LOAD = False
-
-
+#wanne train again (load=false) or load the last model(load=true) from neural_net file
+LOAD_MODE = False
+#if true it only show false comparison on scree, else it shows both
+ONLY_SHOW_FALSE_MODE = True
 
 
 #get process id
@@ -53,7 +53,7 @@ train_y = tf.keras.utils.to_categorical(train_y,10)
 #print(train_data['label'].head())
 #print(self.train_y[0:5,:])
 
-if LOAD == True:
+if LOAD_MODE == True:
      model=tf.keras.models.load_model("neural_net")
 
 else:
@@ -90,7 +90,7 @@ else:
     )
 
     model.compile(optimizer=Optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
-    model.fit(train_x, train_y, batch_size = 50, epochs = 1, callbacks=[callbacks])
+    model.fit(train_x, train_y, batch_size = 50, epochs = 20, callbacks=[callbacks])
 
     model.save("neural_net")
 
@@ -112,40 +112,37 @@ predicted_values = model.predict(train_x)
 predicted_values = np.argmax(predicted_values,axis = 1)
 predicted_values = pd.Series(predicted_values,name="Label")
 
-comparison = comparison.assign(prediction = predicted_values)
-comparison.to_csv("comparison.csv")
+comparison['prediction'] = predicted_values
 
+temp_list = []
+for i in range(0,len(comparison)):
+    if comparison.iloc[i]['label'] == comparison.iloc[i]['prediction']:
+        temp_list.append('True')
+    else:
+        temp_list.append('False')
+
+comparison['compare_state'] = temp_list
 
 
 pg.init()
 clock = pg.time.Clock()
 screen = pg.display.set_mode((WIDTH*PIXEL_SIZE,HEIGTH*PIXEL_SIZE))
-pg.display.set_caption('zufälliges Bild aus MNIST')
-
-def shuffle():   
-    rng_row = random.randint(0,len(comparison)-1)
-    label = comparison.iloc[rng_row]['label'] 
-    prediction = comparison.iloc[rng_row]['prediction']
-    while comparison.iloc[rng_row]['label'] == comparison.iloc[rng_row]['prediction']:
-        rng_row = random.randint(0,len(comparison)-1)
-    
-    print('Abweichender Index: ' + str(rng_row))
-    pixel_list = []
-    color_row = comparison.drop(['label'], axis = 1)
-    color_row = color_row.drop(['prediction'], axis = 1)
-
-    for row in color_row.iloc[rng_row]:
-        pixel_list.append(color_row.iloc[rng_row][row])
-    
-    #print(pixel_list)
-    return pixel_list, rng_row, prediction, label
-    
+pg.display.set_caption('Compare_Screen')
 font = pg.font.SysFont("Consolas", 12)
 
-pixels = shuffle()[0]
-rng = shuffle()[1]
-label = shuffle()[2]
-prediction = shuffle()[3]
+row = 0
+if ONLY_SHOW_FALSE_MODE == True:
+    while comparison.iloc[row]['label'] == comparison.iloc[row]['prediction']:
+        row += 1
+
+pixels = comparison.iloc[row]
+label = comparison.iloc[row]['label']
+prediction = comparison.iloc[row]['prediction']
+compare_state = comparison.iloc[row]['compare_state']
+if compare_state == 'True':
+    color = (0,255,0)
+else:
+    color = (255,0,0)
 
 run = True
 while run:
@@ -153,19 +150,28 @@ while run:
     clock.tick(FPS)
     screen.fill((0,255,0))
 
+    pixel_row = comparison.drop(['label','prediction','compare_state'], axis = 1).iloc[row]
+    #print(pixel_row)
+
     for i in range(0, WIDTH):
         for j in range(0,HEIGTH):
             #print(i,j, pixels[(i*WIDTH)+j])
-            pg.draw.rect(screen, (pixels[(i*WIDTH)+j],pixels[(i*WIDTH)+j],pixels[(i*WIDTH)+j]),(i*PIXEL_SIZE,j*PIXEL_SIZE,PIXEL_SIZE,PIXEL_SIZE))
+            #pg.draw.rect(screen, (pixel_row.iloc[(i*WIDTH)+j],pixel_row.iloc[(i*WIDTH)+j],pixel_row.iloc[(i*WIDTH)+j]),(i*PIXEL_SIZE,j*PIXEL_SIZE,PIXEL_SIZE,PIXEL_SIZE))
+            pixel_color = (pixel_row.iloc[(i*WIDTH)+j],pixel_row.iloc[(i*WIDTH)+j],pixel_row.iloc[(i*WIDTH)+j])
+            pg.draw.rect(screen, pixel_color,(j*PIXEL_SIZE,i*PIXEL_SIZE,PIXEL_SIZE,PIXEL_SIZE))
 
-    img_rng = font.render ("Reihe in train.csv: "+str(rng), True, (255,0,0))
-    screen.blit(img_rng, (10,10))
-    img_label = font.render ("label: "+str(label), True, (255,0,0))
+    img_number = font.render ("Nummer: "+str(row), True, color)
+    screen.blit(img_number, (10,10))
+
+    img_label = font.render ("label: "+str(label), True, color)
     screen.blit(img_label, (10,25))
-    img_prediction = font.render ("prediction: "+str(prediction), True, (255,0,0))
-    screen.blit(img_prediction, (10,40))
-    
 
+    img_prediction = font.render ("prediction: "+str(prediction), True, color)
+    screen.blit(img_prediction, (10,40))
+
+    img_compare_state = font.render ("state: "+str(compare_state), True, color)
+    screen.blit(img_compare_state, (10,55))
+    
     for event in pg.event.get():
         if event.type == pg.QUIT:
             run = False
@@ -173,10 +179,26 @@ while run:
             if event.key == pg.K_ESCAPE:
                 run = False
             elif event.key == pg.K_SPACE:
-                pixels = shuffle()[0]
-                rng = shuffle()[1]
-                label = shuffle()[2]
-                prediction = shuffle()[3]
+                if ONLY_SHOW_FALSE_MODE == True:
+                    row += 1
+                    while comparison.iloc[row]['label'] == comparison.iloc[row]['prediction']:
+                        row += 1 
+                        if row >= len(comparison):
+                            pg.quit()                       
+                else:
+                    row += 1
+                    if row >= len(comparison):
+                            pg.quit()   
+
+                pixels = comparison.iloc[row]
+                label = comparison.iloc[row]['label']
+                prediction = comparison.iloc[row]['prediction']
+                compare_state = comparison.iloc[row]['compare_state']
+
+                if compare_state == 'True':
+                    color = (0,255,0)
+                else:
+                    color = (255,0,0)
                          
 
 
